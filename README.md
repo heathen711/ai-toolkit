@@ -247,8 +247,9 @@ your monitors, you probably need to set the flag `low_vram: true` in the config 
 the model on CPU and should allow it to train with monitors attached.
 
 **Unified Memory GPUs** (such as sm_121/GB10): These GPUs use system RAM instead of dedicated VRAM and report 0 VRAM.
-You **MUST** set `low_vram: true` in your config file for these GPUs to work properly. The toolkit includes utilities
-in `toolkit/device_utils.py` to detect unified memory GPUs automatically.
+Since unified memory uses the same physical RAM for both CPU and GPU, try training with `low_vram: false` first.
+Only set `low_vram: true` if you encounter CUDA memory allocation errors. The toolkit includes utilities in
+`toolkit/device_utils.py` to detect unified memory GPUs automatically.
 
 Users have gotten it to work on Windows with WSL, but there are some reports of a bug when running on windows natively.
 I have only tested on linux for now. This is still extremely experimental and a lot of quantizing and tricks had to

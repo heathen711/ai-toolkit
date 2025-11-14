@@ -179,6 +179,37 @@ if is_unified_memory_gpu():
 - [ ] Test multi-GPU setups (if applicable)
 - [ ] Monitor for CUDA OOM errors
 
+## Important Realization About Unified Memory
+
+**Physical vs Logical Memory Management**:
+
+In unified memory architectures (sm_121/GB10), there is NO separate VRAM chip. All memory is shared system RAM. Therefore:
+
+- Moving data from "CPU" to "GPU" in PyTorch **does not physically move data**
+- It only changes how PyTorch's memory allocator **tracks and labels** the memory
+- The `low_vram: true` setting doesn't save physical memory in unified architectures
+
+**Why low_vram might help (or might not)**:
+
+The `low_vram` setting was designed for GPUs with limited **dedicated VRAM**. For unified memory:
+
+**Potential benefits**:
+- Works around bugs in PyTorch's CUDA allocator when `total_memory=0`
+- Avoids potential issues with CUDA driver's memory management
+- May prevent allocation failures if PyTorch doesn't properly handle unified memory
+
+**Why it might be unnecessary**:
+- No actual memory is saved (it's all in the same RAM)
+- Slower quantization (5-10 minutes vs seconds) for no physical benefit
+- May be working around bugs that don't actually exist
+
+**Recommendation**: **TEST BOTH CONFIGURATIONS**
+
+Users with unified memory GPUs should:
+1. Try `low_vram: false` first (standard settings)
+2. Only use `low_vram: true` if CUDA allocation errors occur
+3. Report results to determine if this setting is actually needed
+
 ## Conclusion
 
 **Current Status**: The codebase appears to be **mostly compatible** with unified memory GPUs because it:
@@ -186,10 +217,10 @@ if is_unified_memory_gpu():
 - Uses manual `low_vram` flag
 - Handles CUDA OOM errors gracefully
 
-**Recommendation**:
-1. Add defensive utilities for future-proofing
-2. Document unified memory GPU usage
-3. Test thoroughly on target hardware
-4. Consider auto-detection of unified memory
+**Updated Recommendation**:
+1. Add defensive utilities for future-proofing ✅ (completed)
+2. Document unified memory GPU usage ✅ (completed)
+3. **Test both `low_vram: true` and `false` on target hardware** ⚠️ (needs testing)
+4. Update documentation based on test results
 
-**Risk Level**: **LOW** - Current code should work if `low_vram: true` is set in config
+**Risk Level**: **LOW** - Current code should work with unified memory GPUs. The `low_vram: true` setting may be unnecessary but won't hurt (just slower setup time).

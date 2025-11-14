@@ -272,13 +272,18 @@ For 24GB VRAM:
 
 These GPUs use system RAM instead of dedicated VRAM and report 0 VRAM to PyTorch.
 
-Required settings:
-- **MUST** set `low_vram: true` in model config
-- Set `quantize: true` for better memory efficiency
-- Set `gradient_checkpointing: true`
-- Consider smaller batch sizes if experiencing OOM errors
+Since unified memory uses the same physical RAM for both CPU and GPU, the `low_vram` setting only changes how PyTorch tracks memory allocations, not where data physically resides.
 
-The codebase includes `toolkit/device_utils.py` with utilities to detect unified memory GPUs. To check if your GPU uses unified memory:
+**Recommended approach** (test to find what works):
+1. **Try `low_vram: false` first** - unified memory may work fine with standard settings
+2. If you get CUDA allocation errors, try `low_vram: true` to work around PyTorch allocator issues
+3. Set `quantize: true` for better memory efficiency
+4. Set `gradient_checkpointing: true`
+5. Start with `batch_size: 1` and increase if stable
+
+**Note**: The `low_vram: true` setting was designed for GPUs with limited dedicated VRAM. For unified memory, any benefit comes from working around potential bugs in PyTorch's CUDA memory allocator when `total_memory=0`, not from actual memory movement.
+
+The codebase includes `toolkit/device_utils.py` with utilities to detect unified memory GPUs:
 
 ```python
 from toolkit.device_utils import is_unified_memory_gpu, print_device_info
@@ -341,7 +346,7 @@ folder_path: "/full/path/to/dataset"
 
 - **Windows WSL**: Known to work, native Windows has reported issues
 - **Monitor attached to training GPU**: Set `low_vram: true`
-- **Unified Memory GPUs** (sm_121/GB10): These GPUs report 0 VRAM. **MUST** set `low_vram: true` in config
+- **Unified Memory GPUs** (sm_121/GB10): These GPUs report 0 VRAM. Try `low_vram: false` first; use `true` if you get allocation errors
 - **Schnell training**: Highly experimental, dev recommended for quality
 - **No tests failing**: Project has no formal test suite - validation is manual
 
