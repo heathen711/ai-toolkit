@@ -268,11 +268,16 @@ For 24GB VRAM:
 - Set `low_vram: true` if GPU drives monitors (slower but uses less VRAM)
 - Use `cache_latents_to_disk: true` to avoid recomputing latents
 
-**Unified Memory GPUs** (sm_121/GB10, etc.):
+**Unified Memory GPUs** (sm_121/GB10, DGX Spark, etc.):
 
 These GPUs use system RAM instead of dedicated VRAM and report 0 VRAM to PyTorch.
 
 Since unified memory uses the same physical RAM for both CPU and GPU, the `low_vram` setting only changes how PyTorch tracks memory allocations, not where data physically resides.
+
+**Important NVIDIA findings** (DGX Spark documentation):
+- `nvidia-smi` shows "Memory-Usage: Not Supported" for unified memory GPUs (expected behavior)
+- `cudaMemGetInfo` underreports available memory (doesn't account for swap)
+- Toolkit uses `/proc/meminfo` for accurate memory reporting on Linux
 
 **Recommended approach** (test to find what works):
 1. **Try `low_vram: false` first** - unified memory may work fine with standard settings
@@ -281,14 +286,17 @@ Since unified memory uses the same physical RAM for both CPU and GPU, the `low_v
 4. Set `gradient_checkpointing: true`
 5. Start with `batch_size: 1` and increase if stable
 
-**Note**: The `low_vram: true` setting was designed for GPUs with limited dedicated VRAM. For unified memory, any benefit comes from working around potential bugs in PyTorch's CUDA memory allocator when `total_memory=0`, not from actual memory movement.
+**Debugging memory issues:**
+```bash
+# Check device info (shows accurate memory from /proc/meminfo)
+python -c "from toolkit.device_utils import print_device_info; print_device_info()"
 
-The codebase includes `toolkit/device_utils.py` with utilities to detect unified memory GPUs:
-
-```python
-from toolkit.device_utils import is_unified_memory_gpu, print_device_info
-print_device_info()  # Displays device type and available memory
+# If experiencing memory issues, flush system caches (requires sudo)
+sudo python -c "from toolkit.device_utils import flush_system_caches; flush_system_caches()"
+# Or manually: sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
 ```
+
+**Note**: The `low_vram: true` setting was designed for GPUs with limited dedicated VRAM. For unified memory, any benefit comes from working around potential bugs in PyTorch's CUDA memory allocator when `total_memory=0`, not from actual memory movement.
 
 ### Checkpoint Recovery
 

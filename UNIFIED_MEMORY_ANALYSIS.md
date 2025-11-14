@@ -2,11 +2,44 @@
 
 ## Issue Description
 
-GPUs with unified memory architecture (such as sm_121/GB10) report `nil` or `0` VRAM when queried via `torch.cuda.get_device_properties().total_memory`. This can cause issues in code that:
+GPUs with unified memory architecture (such as sm_121/GB10, NVIDIA DGX Spark) report `nil` or `0` VRAM when queried via `torch.cuda.get_device_properties().total_memory`. This can cause issues in code that:
 
 1. Queries available VRAM to make decisions
 2. Calculates batch sizes or parameters based on VRAM
 3. Performs divisions or mathematical operations using VRAM values
+
+## NVIDIA Official Guidance (DGX Spark Documentation)
+
+**Reference**: https://docs.nvidia.com/dgx/dgx-spark/known-issues.html
+
+### Key Findings:
+
+1. **cudaMemGetInfo Underreports Memory**
+   - The API does not account for memory that can be reclaimed from swap
+   - Reported available memory underestimates actual allocatable capacity
+   - CPU can dynamically move pages to swap space
+
+2. **nvidia-smi Limitation**
+   - Shows "Memory-Usage: Not Supported" for integrated/unified memory GPUs
+   - This is **expected behavior**, not a bug
+   - Per-process memory stats may still be shown
+
+3. **Recommended Approach**
+   - Don't rely exclusively on cudaMemGetInfo
+   - Query `/proc/meminfo` for MemAvailable, SwapFree, and HugePages
+   - More accurate estimates of allocatable memory
+
+4. **Debugging Tip**
+   - Flush buffer cache: `sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'`
+   - Restart applications after flushing
+
+### Implications for AI Toolkit:
+
+These findings validate our approach:
+- ✅ Using manual `low_vram` flag (not auto-detection based on cudaMemGetInfo)
+- ✅ Implementing `/proc/meminfo` parsing in `device_utils.py`
+- ✅ Documenting nvidia-smi limitations
+- ✅ Adding cache flushing utility for debugging
 
 ## Current State Analysis
 
