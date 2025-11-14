@@ -16,13 +16,13 @@ Version: 0.7.4
 # Linux
 python3 -m venv venv
 source venv/bin/activate
-pip3 install --no-cache-dir torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu126
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 pip3 install -r requirements.txt
 
 # Windows
 python -m venv venv
 .\venv\Scripts\activate
-pip install --no-cache-dir torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu126
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 ```
 
@@ -297,7 +297,7 @@ Requires nvidia-docker for GPU passthrough.
 
 ## Key Dependencies
 
-- **PyTorch**: 2.7.0 with CUDA 12.6
+- **PyTorch**: Latest version with CUDA 13.0
 - **diffusers**: From git (latest features)
 - **transformers**: 4.52.4
 - **accelerate**: Multi-GPU training
