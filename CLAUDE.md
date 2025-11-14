@@ -268,6 +268,23 @@ For 24GB VRAM:
 - Set `low_vram: true` if GPU drives monitors (slower but uses less VRAM)
 - Use `cache_latents_to_disk: true` to avoid recomputing latents
 
+**Unified Memory GPUs** (sm_121/GB10, etc.):
+
+These GPUs use system RAM instead of dedicated VRAM and report 0 VRAM to PyTorch.
+
+Required settings:
+- **MUST** set `low_vram: true` in model config
+- Set `quantize: true` for better memory efficiency
+- Set `gradient_checkpointing: true`
+- Consider smaller batch sizes if experiencing OOM errors
+
+The codebase includes `toolkit/device_utils.py` with utilities to detect unified memory GPUs. To check if your GPU uses unified memory:
+
+```python
+from toolkit.device_utils import is_unified_memory_gpu, print_device_info
+print_device_info()  # Displays device type and available memory
+```
+
 ### Checkpoint Recovery
 
 Training saves checkpoints every N steps. If interrupted:
@@ -324,6 +341,7 @@ folder_path: "/full/path/to/dataset"
 
 - **Windows WSL**: Known to work, native Windows has reported issues
 - **Monitor attached to training GPU**: Set `low_vram: true`
+- **Unified Memory GPUs** (sm_121/GB10): These GPUs report 0 VRAM. **MUST** set `low_vram: true` in config
 - **Schnell training**: Highly experimental, dev recommended for quality
 - **No tests failing**: Project has no formal test suite - validation is manual
 

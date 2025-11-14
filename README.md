@@ -242,12 +242,17 @@ To get started quickly, check out [@araminta_k](https://x.com/araminta_k) tutori
 
 
 ### Requirements
-You currently need a GPU with **at least 24GB of VRAM** to train FLUX.1. If you are using it as your GPU to control 
+You currently need a GPU with **at least 24GB of VRAM** to train FLUX.1. If you are using it as your GPU to control
 your monitors, you probably need to set the flag `low_vram: true` in the config file under `model:`. This will quantize
-the model on CPU and should allow it to train with monitors attached. Users have gotten it to work on Windows with WSL,
-but there are some reports of a bug when running on windows natively. 
-I have only tested on linux for now. This is still extremely experimental
-and a lot of quantizing and tricks had to happen to get it to fit on 24GB at all. 
+the model on CPU and should allow it to train with monitors attached.
+
+**Unified Memory GPUs** (such as sm_121/GB10): These GPUs use system RAM instead of dedicated VRAM and report 0 VRAM.
+You **MUST** set `low_vram: true` in your config file for these GPUs to work properly. The toolkit includes utilities
+in `toolkit/device_utils.py` to detect unified memory GPUs automatically.
+
+Users have gotten it to work on Windows with WSL, but there are some reports of a bug when running on windows natively.
+I have only tested on linux for now. This is still extremely experimental and a lot of quantizing and tricks had to
+happen to get it to fit on 24GB at all. 
 
 ### FLUX.1-dev
 
