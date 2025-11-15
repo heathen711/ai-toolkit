@@ -23,6 +23,54 @@ except ImportError:
 from safetensors.torch import load_file as standard_load_file, save_file
 
 
+# Track GDS availability - check once and cache result
+_GDS_AVAILABLE = None
+_GDS_CHECK_DONE = False
+
+
+def check_gds_available() -> bool:
+    """
+    Check if GPUDirect Storage is available on the system.
+
+    Returns:
+        True if GDS is available and working, False otherwise
+    """
+    global _GDS_AVAILABLE, _GDS_CHECK_DONE
+
+    if _GDS_CHECK_DONE:
+        return _GDS_AVAILABLE
+
+    _GDS_CHECK_DONE = True
+    _GDS_AVAILABLE = False
+
+    # Check if CUDA is available
+    if not torch.cuda.is_available():
+        return False
+
+    # Check if nvidia-fs module is loaded
+    try:
+        with open('/proc/modules', 'r') as f:
+            modules = f.read()
+            if 'nvidia_fs' not in modules:
+                print_acc("GPUDirect Storage: nvidia-fs kernel module not loaded")
+                return False
+    except:
+        return False
+
+    # Check if GDS is accessible via /proc
+    try:
+        if os.path.exists('/proc/driver/nvidia-fs/version'):
+            with open('/proc/driver/nvidia-fs/version', 'r') as f:
+                version = f.read().strip()
+                print_acc(f"GPUDirect Storage detected: {version}")
+                _GDS_AVAILABLE = True
+                return True
+    except:
+        pass
+
+    return False
+
+
 class FastSafetensorsConfig:
     """Configuration for fastsafetensors loading behavior."""
 
@@ -91,6 +139,13 @@ def load_file_fast(
     use_fastsafe = config is not None and config.use_fastsafetensors
     use_gpudirect = use_fastsafe and config.use_gpu_direct
 
+    # Auto-disable GDS if not available on the system
+    if use_gpudirect and is_cuda:
+        if not check_gds_available():
+            use_gpudirect = False
+            config.use_gpu_direct = False
+            print_acc("GPUDirect Storage not available, using fastsafetensors without GDS")
+
     # Determine method description
     if use_fastsafe and use_gpudirect and is_cuda:
         method = "disk->gpu (GPUDirect)"
@@ -139,12 +194,44 @@ def load_file_fast(
         print_acc(f"Loaded {filename} in {elapsed_time:.3f}s")
 
     except Exception as e:
-        print_acc(f"Warning: fastsafetensors failed ({e}), falling back to standard safetensors")
-        # Reset timer for fallback
+        error_msg = str(e)
+
+        # Check if this is a GDS-specific error
+        if "register_buffer" in error_msg or "submit_io" in error_msg:
+            print_acc(f"Warning: GPUDirect Storage failed ({error_msg[:80]}...)")
+            print_acc("Retrying with fastsafetensors without GDS")
+
+            # Mark GDS as unavailable globally
+            global _GDS_AVAILABLE, _GDS_CHECK_DONE
+            _GDS_AVAILABLE = False
+            _GDS_CHECK_DONE = True
+
+            # Retry without GDS
+            try:
+                start_time = time.time()
+                with fastsafe_open(
+                    filenames=[path],
+                    nogds=True,  # Disable GDS
+                    device=fastsafe_device,
+                    debug_log=config.debug_log
+                ) as f:
+                    for key in f.get_keys():
+                        tensors[key] = f.get_tensor(key).clone().detach()
+
+                elapsed_time = time.time() - start_time
+                print_acc(f"Loaded {filename} (no GDS) in {elapsed_time:.3f}s")
+                return tensors
+
+            except Exception as e2:
+                print_acc(f"Warning: fastsafetensors retry failed ({e2}), falling back to standard safetensors")
+        else:
+            print_acc(f"Warning: fastsafetensors failed ({error_msg}), falling back to standard safetensors")
+
+        # Final fallback to standard safetensors
         start_time = time.time()
         tensors = standard_load_file(path, device=device_str)
         elapsed_time = time.time() - start_time
-        print_acc(f"Loaded {filename} (fallback) in {elapsed_time:.3f}s")
+        print_acc(f"Loaded {filename} (standard) in {elapsed_time:.3f}s")
 
     return tensors
 
@@ -200,19 +287,43 @@ def get_fastsafetensors_info() -> Dict[str, any]:
     info = {
         "available": FASTSAFETENSORS_AVAILABLE,
         "version": None,
-        "gpu_direct_supported": False,
+        "gpu_direct_available": False,
+        "gpu_direct_checked": _GDS_CHECK_DONE,
     }
 
     if FASTSAFETENSORS_AVAILABLE:
         try:
             import fastsafetensors
             info["version"] = getattr(fastsafetensors, "__version__", "unknown")
-            # GPUDirect is supported if CUDA is available and we're on Linux
-            info["gpu_direct_supported"] = torch.cuda.is_available() and os.name == 'posix'
+            # Check actual GDS availability
+            info["gpu_direct_available"] = check_gds_available()
         except:
             pass
 
     return info
+
+
+def print_fastsafetensors_status():
+    """Print current fastsafetensors and GPUDirect Storage status."""
+    info = get_fastsafetensors_info()
+
+    print_acc("=" * 60)
+    print_acc("fastsafetensors Status:")
+    print_acc(f"  Library available: {info['available']}")
+
+    if info['available']:
+        print_acc(f"  Version: {info['version']}")
+        print_acc(f"  GPUDirect Storage: {'Available' if info['gpu_direct_available'] else 'Not available'}")
+
+        if not info['gpu_direct_available']:
+            print_acc("\n  To enable GPUDirect Storage:")
+            print_acc("    1. Install nvidia-gds: sudo apt-get install nvidia-gds")
+            print_acc("    2. Load module: sudo modprobe nvidia-fs")
+            print_acc("    3. Verify: cat /proc/driver/nvidia-fs/version")
+    else:
+        print_acc("  Install with: pip install fastsafetensors")
+
+    print_acc("=" * 60)
 
 
 def should_use_fastsafetensors(
