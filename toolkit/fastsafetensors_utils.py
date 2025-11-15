@@ -75,6 +75,12 @@ def load_file_fast(
     device_str = str(device) if isinstance(device, torch.device) else device
     is_cuda = "cuda" in device_str.lower()
 
+    # Normalize device for fastsafetensors - it requires explicit index
+    # Convert "cuda" to "cuda:0" for fastsafetensors compatibility
+    fastsafe_device = device_str
+    if device_str == "cuda":
+        fastsafe_device = "cuda:0"
+
     # Get file info for logging
     filename = os.path.basename(path)
     file_size_mb = 0.0
@@ -121,7 +127,7 @@ def load_file_fast(
         with fastsafe_open(
             filenames=[path],
             nogds=nogds,
-            device=device_str,
+            device=fastsafe_device,  # Use normalized device with explicit index
             debug_log=config.debug_log
         ) as f:
             for key in f.get_keys():
