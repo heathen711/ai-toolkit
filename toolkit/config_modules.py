@@ -664,7 +664,12 @@ class ModelConfig:
 
         # compile the model with torch compile
         self.compile = kwargs.get("compile", False)
-        
+
+        # fastsafetensors and GPUDirect Storage support
+        self.use_fastsafetensors = kwargs.get("use_fastsafetensors", False)
+        self.use_gpu_direct = kwargs.get("use_gpu_direct", True)
+        self.fastsafetensors_debug = kwargs.get("fastsafetensors_debug", False)
+
         # kwargs to pass to the model
         self.model_kwargs = kwargs.get("model_kwargs", {})
         
@@ -903,6 +908,11 @@ class DatasetConfig:
         self.cache_latents_to_disk: bool = kwargs.get('cache_latents_to_disk', False)
         self.cache_clip_vision_to_disk: bool = kwargs.get('cache_clip_vision_to_disk', False)
         self.cache_text_embeddings: bool = kwargs.get('cache_text_embeddings', False)
+
+        # fastsafetensors and GPUDirect Storage for caching
+        self.use_fastsafetensors_cache: bool = kwargs.get('use_fastsafetensors_cache', False)
+        self.use_gpu_direct_cache: bool = kwargs.get('use_gpu_direct_cache', True)
+        self.fastsafetensors_cache_debug: bool = kwargs.get('fastsafetensors_cache_debug', False)
 
         self.standardize_images: bool = kwargs.get('standardize_images', False)
 

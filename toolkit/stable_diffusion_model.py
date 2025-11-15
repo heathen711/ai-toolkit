@@ -25,6 +25,7 @@ from toolkit.assistant_lora import load_assistant_lora_from_path
 from toolkit.clip_vision_adapter import ClipVisionAdapter
 from toolkit.custom_adapter import CustomAdapter
 from toolkit.dequantize import patch_dequantization_on_save
+from toolkit.fastsafetensors_utils import load_file_fast, create_fast_config
 from toolkit.ip_adapter import IPAdapter
 from toolkit.util.vae import load_vae
 from toolkit import train_tools
@@ -341,7 +342,12 @@ class StableDiffusion:
                 print_acc("Experimental XL mode enabled")
                 print_acc("Loading and injecting alt weights")
                 # load the mismatched weight and force it in
-                raw_state_dict = load_file(model_path)
+                fast_config = create_fast_config(
+                    use_fastsafetensors=self.model_config.use_fastsafetensors,
+                    use_gpu_direct=self.model_config.use_gpu_direct,
+                    debug=self.model_config.fastsafetensors_debug
+                )
+                raw_state_dict = load_file_fast(model_path, device=self.device_torch, config=fast_config)
                 replacement_weight = raw_state_dict['conditioner.embedders.1.model.text_projection'].clone()
                 del raw_state_dict
                 #  get state dict for  for 2nd text encoder
@@ -707,7 +713,12 @@ class StableDiffusion:
                     # we can do it on the cpu but it takes about 5-10 mins vs seconds on the gpu
                     # we are going to separate it into the two transformer blocks one at a time
 
-                    lora_state_dict = load_file(self.model_config.lora_path)
+                    fast_config = create_fast_config(
+                        use_fastsafetensors=self.model_config.use_fastsafetensors,
+                        use_gpu_direct=self.model_config.use_gpu_direct,
+                        debug=self.model_config.fastsafetensors_debug
+                    )
+                    lora_state_dict = load_file_fast(self.model_config.lora_path, device='cpu', config=fast_config)
                     single_transformer_lora = {}
                     single_block_key = "transformer.single_transformer_blocks."
                     double_transformer_lora = {}

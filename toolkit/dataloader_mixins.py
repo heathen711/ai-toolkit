@@ -20,6 +20,7 @@ from toolkit.basic import flush, value_map
 from toolkit.buckets import get_bucket_for_image_size, get_resolution
 from toolkit.config_modules import ControlTypes
 from toolkit.control_generator import ControlGenerator
+from toolkit.fastsafetensors_utils import load_file_fast, create_fast_config
 from toolkit.metadata import get_meta_for_safetensors
 from toolkit.models.pixtral_vision import PixtralVisionImagePreprocessorCompatible
 from toolkit.prompt_utils import inject_trigger_into_prompt
@@ -1108,12 +1109,17 @@ class ClipImageFileItemDTOMixin:
         if self.clip_image_processor is None:
             is_dynamic_size_and_aspect = True # serving it raw
         if self.is_vision_clip_cached:
-            self.clip_image_embeds = load_file(self.get_clip_vision_embeddings_path())
+            fast_config = create_fast_config(
+                use_fastsafetensors=self.dataset_config.use_fastsafetensors_cache,
+                use_gpu_direct=self.dataset_config.use_gpu_direct_cache,
+                debug=self.dataset_config.fastsafetensors_cache_debug
+            )
+            self.clip_image_embeds = load_file_fast(self.get_clip_vision_embeddings_path(), device='cpu', config=fast_config)
 
             # get a random unconditional image
             if self.clip_vision_unconditional_paths is not None:
                 unconditional_path = random.choice(self.clip_vision_unconditional_paths)
-                self.clip_image_embeds_unconditional = load_file(unconditional_path)
+                self.clip_image_embeds_unconditional = load_file_fast(unconditional_path, device='cpu', config=fast_config)
 
             return
         clip_image_path = self.get_new_clip_image_path()
@@ -1697,10 +1703,15 @@ class LatentCachingFileItemDTOMixin:
             return None
         if self._encoded_latent is None:
             # load it from disk
-            state_dict = load_file(
+            fast_config = create_fast_config(
+                use_fastsafetensors=self.dataset_config.use_fastsafetensors_cache,
+                use_gpu_direct=self.dataset_config.use_gpu_direct_cache,
+                debug=self.dataset_config.fastsafetensors_cache_debug
+            )
+            state_dict = load_file_fast(
                 self.get_latent_path(),
-                # device=device if device is not None else self.latent_load_device
-                device='cpu'
+                device='cpu',
+                config=fast_config
             )
             self._encoded_latent = state_dict['latent']
         return self._encoded_latent
@@ -1756,7 +1767,12 @@ class LatentCachingMixin:
                 if os.path.exists(latent_path):
                     if to_memory:
                         # load it into memory
-                        state_dict = load_file(latent_path, device='cpu')
+                        fast_config = create_fast_config(
+                            use_fastsafetensors=self.dataset_config.use_fastsafetensors_cache,
+                            use_gpu_direct=self.dataset_config.use_gpu_direct_cache,
+                            debug=self.dataset_config.fastsafetensors_cache_debug
+                        )
+                        state_dict = load_file_fast(latent_path, device='cpu', config=fast_config)
                         file_item._encoded_latent = state_dict['latent'].to('cpu', dtype=self.sd.torch_dtype)
                 else:
                     # not saved to disk, calculate
@@ -1855,7 +1871,12 @@ class TextEmbeddingFileItemDTOMixin:
             return
         if self.prompt_embeds is None:
             # load it from disk
-            self.prompt_embeds = PromptEmbeds.load(self.get_text_embedding_path())
+            fast_config = create_fast_config(
+                use_fastsafetensors=self.dataset_config.use_fastsafetensors_cache,
+                use_gpu_direct=self.dataset_config.use_gpu_direct_cache,
+                debug=self.dataset_config.fastsafetensors_cache_debug
+            )
+            self.prompt_embeds = PromptEmbeds.load(self.get_text_embedding_path(), fast_config=fast_config)
 
 class TextEmbeddingCachingMixin:
     def __init__(self: 'AiToolkitDataset', **kwargs):

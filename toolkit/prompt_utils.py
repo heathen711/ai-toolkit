@@ -6,6 +6,7 @@ from safetensors.torch import load_file, save_file
 from tqdm import tqdm
 import random
 
+from toolkit.fastsafetensors_utils import load_file_fast, FastSafetensorsConfig
 from toolkit.train_tools import get_torch_dtype
 import itertools
 
@@ -129,13 +130,14 @@ class PromptEmbeds:
         save_file(state_dict, path)
     
     @classmethod
-    def load(cls, path: str) -> 'PromptEmbeds':
+    def load(cls, path: str, fast_config: Optional[FastSafetensorsConfig] = None) -> 'PromptEmbeds':
         """
         Load the prompt embeds from a file.
         :param path: The path to load the prompt embeds from.
+        :param fast_config: Optional FastSafetensorsConfig for optimized loading with GPUDirect.
         :return: An instance of PromptEmbeds.
         """
-        state_dict = load_file(path, device='cpu')
+        state_dict = load_file_fast(path, device='cpu', config=fast_config)
         text_embeds = []
         pooled_embeds = None
         attention_mask = []
