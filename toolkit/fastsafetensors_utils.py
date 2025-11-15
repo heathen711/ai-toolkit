@@ -6,6 +6,7 @@ which can leverage NVIDIA GPUDirect Storage for direct NVMe-to-GPU transfers.
 """
 
 import os
+import time
 import torch
 from typing import Optional, Union, Dict, List
 from collections import OrderedDict
@@ -70,12 +71,46 @@ def load_file_fast(
         >>> config = FastSafetensorsConfig(use_fastsafetensors=True, use_gpu_direct=True)
         >>> state_dict = load_file_fast("model.safetensors", device="cuda", config=config)
     """
-    # Use standard safetensors if no config or fastsafetensors disabled
-    if config is None or not config.use_fastsafetensors:
-        return standard_load_file(path, device=str(device))
-
     # Convert device to string if needed
     device_str = str(device) if isinstance(device, torch.device) else device
+    is_cuda = "cuda" in device_str.lower()
+
+    # Get file info for logging
+    filename = os.path.basename(path)
+    file_size_mb = 0.0
+    if os.path.exists(path):
+        file_size_mb = os.path.getsize(path) / (1024 * 1024)
+
+    # Determine loading method and destination
+    use_fastsafe = config is not None and config.use_fastsafetensors
+    use_gpudirect = use_fastsafe and config.use_gpu_direct
+
+    # Determine method description
+    if use_fastsafe and use_gpudirect and is_cuda:
+        method = "disk->gpu (GPUDirect)"
+    elif use_fastsafe and is_cuda:
+        method = "disk->cpu->gpu (fastsafetensors)"
+    elif use_fastsafe and not is_cuda:
+        method = "disk->cpu (fastsafetensors)"
+    elif is_cuda:
+        method = "disk->cpu->gpu (standard)"
+    else:
+        method = "disk->cpu (standard)"
+
+    destination = device_str
+
+    # Log start
+    print_acc(f"Loading {filename} ({file_size_mb:.2f} MB) | Destination: {destination} | Method: {method}")
+
+    # Start timing
+    start_time = time.time()
+
+    # Use standard safetensors if no config or fastsafetensors disabled
+    if config is None or not config.use_fastsafetensors:
+        tensors = standard_load_file(path, device=device_str)
+        elapsed_time = time.time() - start_time
+        print_acc(f"Loaded {filename} in {elapsed_time:.3f}s")
+        return tensors
 
     # Use fastsafetensors
     tensors = {}
@@ -92,9 +127,18 @@ def load_file_fast(
             for key in f.get_keys():
                 # Clone and detach to ensure tensor is owned and not sharing memory
                 tensors[key] = f.get_tensor(key).clone().detach()
+
+        # Log completion
+        elapsed_time = time.time() - start_time
+        print_acc(f"Loaded {filename} in {elapsed_time:.3f}s")
+
     except Exception as e:
         print_acc(f"Warning: fastsafetensors failed ({e}), falling back to standard safetensors")
+        # Reset timer for fallback
+        start_time = time.time()
         tensors = standard_load_file(path, device=device_str)
+        elapsed_time = time.time() - start_time
+        print_acc(f"Loaded {filename} (fallback) in {elapsed_time:.3f}s")
 
     return tensors
 
