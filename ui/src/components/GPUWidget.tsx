@@ -63,17 +63,17 @@ export default function GPUWidget({ gpu }: GPUWidgetProps) {
               <HardDrive className="w-4 h-4 text-blue-400" />
               <p className="text-xs text-gray-400">Memory</p>
               <span className="text-xs text-gray-300 ml-auto">
-                {((gpu.memory.used / gpu.memory.total) * 100).toFixed(1)}%
+                {gpu.memory.total > 0 ? ((gpu.memory.used / gpu.memory.total) * 100).toFixed(1) : '0'}%
               </span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-1">
               <div
                 className="h-1 rounded-full bg-blue-500 transition-all"
-                style={{ width: `${(gpu.memory.used / gpu.memory.total) * 100}%` }}
+                style={{ width: `${gpu.memory.total > 0 ? (gpu.memory.used / gpu.memory.total) * 100 : 0}%` }}
               />
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
-              {formatMemory(gpu.memory.used)} / {formatMemory(gpu.memory.total)}
+              {gpu.memory.total > 0 ? `${formatMemory(gpu.memory.used)} / ${formatMemory(gpu.memory.total)}` : 'N/A'}
             </p>
           </div>
         </div>

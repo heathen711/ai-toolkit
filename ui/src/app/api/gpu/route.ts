@@ -70,54 +70,108 @@ async function getGpuStats(isWindows: boolean) {
   });
 
   // Parse CSV output
-  const gpus = stdout
-    .trim()
-    .split('\n')
-    .map(line => {
-      const [
-        index,
-        name,
-        driverVersion,
-        temperature,
-        gpuUtil,
-        memoryUtil,
-        memoryTotal,
-        memoryFree,
-        memoryUsed,
-        powerDraw,
-        powerLimit,
-        clockGraphics,
-        clockMemory,
-        fanSpeed,
-      ] = line.split(', ').map(item => item.trim());
+  const gpus = await Promise.all(
+    stdout
+      .trim()
+      .split('\n')
+      .map(async line => {
+        const [
+          index,
+          name,
+          driverVersion,
+          temperature,
+          gpuUtil,
+          memoryUtil,
+          memoryTotal,
+          memoryFree,
+          memoryUsed,
+          powerDraw,
+          powerLimit,
+          clockGraphics,
+          clockMemory,
+          fanSpeed,
+        ] = line.split(', ').map(item => item.trim());
 
-      return {
-        index: parseInt(index),
-        name,
-        driverVersion,
-        temperature: parseInt(temperature),
-        utilization: {
-          gpu: parseInt(gpuUtil),
-          memory: parseInt(memoryUtil),
-        },
-        memory: {
-          total: parseInt(memoryTotal),
-          free: parseInt(memoryFree),
-          used: parseInt(memoryUsed),
-        },
-        power: {
-          draw: parseFloat(powerDraw),
-          limit: parseFloat(powerLimit),
-        },
-        clocks: {
-          graphics: parseInt(clockGraphics),
-          memory: parseInt(clockMemory),
-        },
-        fan: {
-          speed: parseInt(fanSpeed) || 0, // Some GPUs might not report fan speed, default to 0
-        },
-      };
-    });
+        let memTotal = parseInt(memoryTotal);
+        let memFree = parseInt(memoryFree);
+        let memUsed = parseInt(memoryUsed);
+        let memUtil = parseInt(memoryUtil);
+
+        // Check if memory values are NaN (unified memory GPU case)
+        // nvidia-smi returns "[Not Supported]" which becomes NaN when parsed
+        if (isNaN(memTotal) || isNaN(memUsed) || memTotal === 0) {
+          // Fall back to Python script to get accurate unified memory stats
+          try {
+            const pythonMemInfo = await getUnifiedMemoryInfo(parseInt(index));
+            if (pythonMemInfo) {
+              memTotal = pythonMemInfo.total_mb;
+              memFree = pythonMemInfo.free_mb;
+              memUsed = pythonMemInfo.used_mb;
+              // Calculate memory utilization percentage
+              memUtil = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0;
+            }
+          } catch (error) {
+            console.error(`Failed to get unified memory info for GPU ${index}:`, error);
+            // Set to 0 if we can't get the info
+            memTotal = 0;
+            memFree = 0;
+            memUsed = 0;
+            memUtil = 0;
+          }
+        }
+
+        return {
+          index: parseInt(index),
+          name,
+          driverVersion,
+          temperature: parseInt(temperature),
+          utilization: {
+            gpu: parseInt(gpuUtil) || 0,
+            memory: memUtil || 0,
+          },
+          memory: {
+            total: memTotal,
+            free: memFree,
+            used: memUsed,
+          },
+          power: {
+            draw: parseFloat(powerDraw),
+            limit: parseFloat(powerLimit),
+          },
+          clocks: {
+            graphics: parseInt(clockGraphics),
+            memory: parseInt(clockMemory),
+          },
+          fan: {
+            speed: parseInt(fanSpeed) || 0, // Some GPUs might not report fan speed, default to 0
+          },
+        };
+      }),
+  );
 
   return gpus;
+}
+
+async function getUnifiedMemoryInfo(gpuIndex: number): Promise<{
+  total_mb: number;
+  free_mb: number;
+  used_mb: number;
+  is_unified: boolean;
+} | null> {
+  try {
+    // Call Python script to get accurate memory info for unified memory GPUs
+    const scriptPath = `${process.cwd()}/get_gpu_memory.py`;
+    const pythonCmd = `python3 ${scriptPath} ${gpuIndex}`;
+
+    const { stdout } = await execAsync(pythonCmd);
+    const result = JSON.parse(stdout.trim());
+
+    if (result.is_unified && result.total_mb > 0) {
+      return result;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting unified memory info:', error);
+    return null;
+  }
 }

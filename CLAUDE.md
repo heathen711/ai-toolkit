@@ -373,3 +373,4 @@ Example extensions in `/extensions_built_in/`:
 - `diffusion_models/` - Model-specific adapters (FLUX, Wan2, etc.)
 - `ultimate_slider_trainer` - Concept slider training
 - `dataset_tools` - Dataset utilities
+- save all docs within the docs folder
