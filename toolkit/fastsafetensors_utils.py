@@ -185,7 +185,7 @@ def load_file_fast(
             device=fastsafe_device,  # Use normalized device with explicit index
             debug_log=config.debug_log
         ) as f:
-            for key in f.get_keys():
+            for key in f.keys():
                 # Clone and detach to ensure tensor is owned and not sharing memory
                 tensors[key] = f.get_tensor(key).clone().detach()
 
@@ -215,7 +215,7 @@ def load_file_fast(
                     device=fastsafe_device,
                     debug_log=config.debug_log
                 ) as f:
-                    for key in f.get_keys():
+                    for key in f.keys():
                         tensors[key] = f.get_tensor(key).clone().detach()
 
                 elapsed_time = time.time() - start_time
