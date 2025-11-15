@@ -10,12 +10,14 @@ import torch
 from typing import Optional, Union, Dict, List
 from collections import OrderedDict
 
+from toolkit.print import print_acc
+
 try:
     from fastsafetensors import fastsafe_open
     FASTSAFETENSORS_AVAILABLE = True
 except ImportError:
     FASTSAFETENSORS_AVAILABLE = False
-    print("Warning: fastsafetensors not available. Falling back to standard safetensors.")
+    print_acc("Warning: fastsafetensors not available. Falling back to standard safetensors.")
 
 from safetensors.torch import load_file as standard_load_file, save_file
 
@@ -42,7 +44,7 @@ class FastSafetensorsConfig:
         self.debug_log = debug_log
 
         if use_fastsafetensors and not FASTSAFETENSORS_AVAILABLE:
-            print("Warning: fastsafetensors requested but not available. Install with: pip install fastsafetensors")
+            print_acc("Warning: fastsafetensors requested but not available. Install with: pip install fastsafetensors")
 
 
 def load_file_fast(
@@ -91,7 +93,7 @@ def load_file_fast(
                 # Clone and detach to ensure tensor is owned and not sharing memory
                 tensors[key] = f.get_tensor(key).clone().detach()
     except Exception as e:
-        print(f"Warning: fastsafetensors failed ({e}), falling back to standard safetensors")
+        print_acc(f"Warning: fastsafetensors failed ({e}), falling back to standard safetensors")
         tensors = standard_load_file(path, device=device_str)
 
     return tensors
