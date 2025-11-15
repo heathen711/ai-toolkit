@@ -12,6 +12,7 @@ This directory contains a performance test script for comparing standard safeten
 - **Detailed Metrics**: Reports loading time, speed (MB/s), and speedup ratio
 - **Memory Management**: Properly unloads tensors and clears GPU memory between tests
 - **Device Flexibility**: Test with CPU or any CUDA device
+- **Sharded Model Support**: Handles both single files and sharded models with index.json
 
 ## Requirements
 
@@ -40,9 +41,13 @@ sudo python testing/test_fastsafetensors_performance.py model.safetensors --devi
 ### Examples
 
 ```bash
-# Test a large model file (FLUX transformer)
+# Test a single safetensors file (FLUX transformer)
 sudo python testing/test_fastsafetensors_performance.py \
     models/flux_transformer.safetensors
+
+# Test a sharded model directory (e.g., Qwen-Image with 9 shards)
+sudo python testing/test_fastsafetensors_performance.py \
+    models/Qwen/Qwen-Image/transformer
 
 # Test cached latents
 sudo python testing/test_fastsafetensors_performance.py \
@@ -52,6 +57,35 @@ sudo python testing/test_fastsafetensors_performance.py \
 sudo python testing/test_fastsafetensors_performance.py \
     datasets/my_data/_t_e_cache/embedding_001.safetensors
 ```
+
+## Sharded Model Support
+
+The test script automatically detects and handles sharded models (models split across multiple safetensors files with an index.json).
+
+**Supported index formats:**
+- `diffusion_pytorch_model.safetensors.index.json` (diffusers models)
+- `model.safetensors.index.json` (general models)
+- `pytorch_model.safetensors.index.json` (PyTorch models)
+
+**Example sharded model structure:**
+```
+models/Qwen/Qwen-Image/transformer/
+├── config.json
+├── diffusion_pytorch_model-00001-of-00009.safetensors
+├── diffusion_pytorch_model-00002-of-00009.safetensors
+├── ...
+├── diffusion_pytorch_model-00009-of-00009.safetensors
+└── diffusion_pytorch_model.safetensors.index.json
+```
+
+**How it works:**
+1. Detects directory with index.json
+2. Reads index to find all shard files
+3. Loads each shard sequentially and combines them
+4. Measures total loading time across all shards
+5. Reports combined metrics
+
+This allows you to benchmark large models like Qwen-Image that exceed single file limits.
 
 ## How It Works
 

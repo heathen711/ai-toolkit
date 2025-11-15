@@ -4,22 +4,34 @@ Performance test script for comparing standard safetensors vs fastsafetensors wi
 
 This script performs a controlled comparison by:
 1. Clearing Linux filesystem cache before each test
-2. Loading a safetensors file with standard method
+2. Loading a safetensors file/model with standard method
 3. Clearing cache again
-4. Loading the same file with fastsafetensors + GPUDirect
+4. Loading the same file/model with fastsafetensors + GPUDirect
 5. Reporting detailed timing and performance metrics
 
+Supports both:
+- Single .safetensors files
+- Sharded models (directory with multiple .safetensors files and index.json)
+
 Usage:
-    sudo python testing/test_fastsafetensors_performance.py <path_to_safetensors_file> [device]
+    sudo python testing/test_fastsafetensors_performance.py <path> [--device DEVICE]
 
 Arguments:
-    path_to_safetensors_file: Path to the .safetensors file to test
-    device: Target device (default: 'cuda' if available, else 'cpu')
+    path: Path to a .safetensors file OR directory containing sharded model
+    --device: Target device (default: 'cuda' if available, else 'cpu')
 
 Examples:
+    # Single file
     sudo python testing/test_fastsafetensors_performance.py models/flux_transformer.safetensors
-    sudo python testing/test_fastsafetensors_performance.py models/flux_transformer.safetensors cuda:0
-    sudo python testing/test_fastsafetensors_performance.py cache/latents.safetensors cpu
+
+    # Sharded model directory (e.g., Qwen-Image)
+    sudo python testing/test_fastsafetensors_performance.py models/Qwen/Qwen-Image/transformer
+
+    # Specific device
+    sudo python testing/test_fastsafetensors_performance.py models/model.safetensors --device cuda:0
+
+    # CPU test
+    sudo python testing/test_fastsafetensors_performance.py cache/latents.safetensors --device cpu
 
 Note: This script requires sudo privileges to clear filesystem cache.
 """
@@ -30,6 +42,8 @@ import time
 import subprocess
 import gc
 import argparse
+import json
+import glob
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -83,23 +97,105 @@ def clear_system_cache():
         sys.exit(1)
 
 
-def get_file_info(path):
-    """Get file size and basic info."""
-    if not os.path.exists(path):
-        print(f"✗ Error: File not found: {path}")
+def is_sharded_model(path):
+    """Check if path is a directory containing a sharded model with index.json."""
+    if not os.path.isdir(path):
+        return False
+
+    # Look for index file (diffusers format)
+    index_files = [
+        'diffusion_pytorch_model.safetensors.index.json',
+        'model.safetensors.index.json',
+        'pytorch_model.safetensors.index.json',
+    ]
+
+    for index_file in index_files:
+        if os.path.exists(os.path.join(path, index_file)):
+            return True
+
+    return False
+
+
+def get_shard_files(model_dir):
+    """Get list of shard files from a sharded model directory."""
+    # Find the index file
+    index_files = [
+        'diffusion_pytorch_model.safetensors.index.json',
+        'model.safetensors.index.json',
+        'pytorch_model.safetensors.index.json',
+    ]
+
+    index_path = None
+    for index_file in index_files:
+        candidate = os.path.join(model_dir, index_file)
+        if os.path.exists(candidate):
+            index_path = candidate
+            break
+
+    if not index_path:
+        print(f"✗ Error: No index.json found in {model_dir}")
         sys.exit(1)
 
-    size_bytes = os.path.getsize(path)
-    size_mb = size_bytes / (1024 * 1024)
-    size_gb = size_bytes / (1024 * 1024 * 1024)
+    # Read the index
+    with open(index_path, 'r') as f:
+        index = json.load(f)
 
-    return {
-        'path': path,
-        'filename': os.path.basename(path),
-        'size_bytes': size_bytes,
-        'size_mb': size_mb,
-        'size_gb': size_gb,
-    }
+    # Get unique shard filenames
+    if 'weight_map' in index:
+        shard_files = sorted(set(index['weight_map'].values()))
+    else:
+        # Fallback: glob for shard files
+        shard_files = sorted(glob.glob(os.path.join(model_dir, '*-of-*.safetensors')))
+        shard_files = [os.path.basename(f) for f in shard_files]
+
+    # Convert to full paths
+    shard_paths = [os.path.join(model_dir, f) for f in shard_files]
+
+    return shard_paths, index_path
+
+
+def get_file_info(path):
+    """Get file size and basic info for a file or sharded model directory."""
+    if not os.path.exists(path):
+        print(f"✗ Error: Path not found: {path}")
+        sys.exit(1)
+
+    is_sharded = is_sharded_model(path)
+
+    if is_sharded:
+        # Get info for sharded model
+        shard_files, index_path = get_shard_files(path)
+
+        # Calculate total size
+        size_bytes = sum(os.path.getsize(f) for f in shard_files)
+        size_mb = size_bytes / (1024 * 1024)
+        size_gb = size_bytes / (1024 * 1024 * 1024)
+
+        return {
+            'path': path,
+            'filename': os.path.basename(path.rstrip('/')),
+            'size_bytes': size_bytes,
+            'size_mb': size_mb,
+            'size_gb': size_gb,
+            'is_sharded': True,
+            'shard_files': shard_files,
+            'num_shards': len(shard_files),
+            'index_path': index_path,
+        }
+    else:
+        # Single file
+        size_bytes = os.path.getsize(path)
+        size_mb = size_bytes / (1024 * 1024)
+        size_gb = size_bytes / (1024 * 1024 * 1024)
+
+        return {
+            'path': path,
+            'filename': os.path.basename(path),
+            'size_bytes': size_bytes,
+            'size_mb': size_mb,
+            'size_gb': size_gb,
+            'is_sharded': False,
+        }
 
 
 def cleanup_memory():
@@ -112,7 +208,7 @@ def cleanup_memory():
     time.sleep(0.5)
 
 
-def test_standard_loading(file_path, device):
+def test_standard_loading(file_info, device):
     """Test loading with standard safetensors."""
     print("\n" + "="*80)
     print("TEST 1: Standard safetensors loading")
@@ -120,14 +216,29 @@ def test_standard_loading(file_path, device):
     print(f"Method: disk->cpu->gpu (standard safetensors)")
     print(f"Device: {device}")
 
+    if file_info['is_sharded']:
+        print(f"Model type: Sharded ({file_info['num_shards']} files)")
+    else:
+        print(f"Model type: Single file")
+
     # Clear cache before test
     clear_system_cache()
 
     print("\nStarting load...")
     start_time = time.time()
 
-    # Load the file
-    state_dict = standard_load_file(file_path, device=str(device))
+    # Load the file(s)
+    if file_info['is_sharded']:
+        # Load all shards and combine
+        state_dict = {}
+        for i, shard_file in enumerate(file_info['shard_files'], 1):
+            print(f"  Loading shard {i}/{file_info['num_shards']}: {os.path.basename(shard_file)}")
+            shard_dict = standard_load_file(shard_file, device=str(device))
+            state_dict.update(shard_dict)
+            del shard_dict
+    else:
+        # Single file
+        state_dict = standard_load_file(file_info['path'], device=str(device))
 
     # Ensure completion (especially for CUDA)
     if 'cuda' in str(device):
@@ -151,7 +262,7 @@ def test_standard_loading(file_path, device):
     return elapsed
 
 
-def test_fastsafetensors_loading(file_path, device):
+def test_fastsafetensors_loading(file_info, device):
     """Test loading with fastsafetensors + GPUDirect."""
     print("\n" + "="*80)
     print("TEST 2: fastsafetensors with GPUDirect loading")
@@ -168,6 +279,11 @@ def test_fastsafetensors_loading(file_path, device):
         print(f"Method: disk->cpu (fastsafetensors)")
     print(f"Device: {device}")
 
+    if file_info['is_sharded']:
+        print(f"Model type: Sharded ({file_info['num_shards']} files)")
+    else:
+        print(f"Model type: Single file")
+
     # Clear cache before test
     clear_system_cache()
 
@@ -181,8 +297,18 @@ def test_fastsafetensors_loading(file_path, device):
     print("\nStarting load...")
     start_time = time.time()
 
-    # Load the file
-    state_dict = load_file_fast(file_path, device=device, config=config)
+    # Load the file(s)
+    if file_info['is_sharded']:
+        # Load all shards and combine
+        state_dict = {}
+        for i, shard_file in enumerate(file_info['shard_files'], 1):
+            print(f"  Loading shard {i}/{file_info['num_shards']}: {os.path.basename(shard_file)}")
+            shard_dict = load_file_fast(shard_file, device=device, config=config)
+            state_dict.update(shard_dict)
+            del shard_dict
+    else:
+        # Single file
+        state_dict = load_file_fast(file_info['path'], device=device, config=config)
 
     # Ensure completion (especially for CUDA)
     if 'cuda' in str(device):
@@ -255,7 +381,7 @@ def main():
     )
     parser.add_argument(
         'file_path',
-        help='Path to the safetensors file to test'
+        help='Path to a .safetensors file or directory containing sharded model'
     )
     parser.add_argument(
         '--device',
@@ -281,6 +407,10 @@ def main():
     print(f"\nTest Configuration:")
     print(f"  File: {file_info['filename']}")
     print(f"  Path: {file_info['path']}")
+    if file_info['is_sharded']:
+        print(f"  Type: Sharded model ({file_info['num_shards']} shards)")
+    else:
+        print(f"  Type: Single file")
     print(f"  Size: {file_info['size_mb']:.2f} MB ({file_info['size_gb']:.3f} GB)")
     print(f"  Device: {device}")
     print(f"  PyTorch: {torch.__version__}")
@@ -300,11 +430,11 @@ def main():
         sys.exit(1)
 
     # Run tests
-    standard_time = test_standard_loading(file_info['path'], device)
+    standard_time = test_standard_loading(file_info, device)
 
     fastsafe_time = None
     if FASTSAFETENSORS_AVAILABLE:
-        fastsafe_time = test_fastsafetensors_loading(file_info['path'], device)
+        fastsafe_time = test_fastsafetensors_loading(file_info, device)
 
     # Print comparison
     print_comparison(file_info, standard_time, fastsafe_time, device)
