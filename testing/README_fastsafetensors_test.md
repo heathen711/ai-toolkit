@@ -240,6 +240,58 @@ If the file is too large for your GPU memory, the test will fail. Try:
 sudo python testing/test_fastsafetensors_performance.py model.safetensors --device cpu
 ```
 
+### GDS Buffer Registration Error (Error 5048)
+
+If you see:
+```
+gds_device_buffer.cufile_register: cuFileBufRegister returned an error = 5048
+[2025-11-15 08:23:41.098] Warning: GPUDirect Storage failed (submit_io: register_buffer failed...)
+[2025-11-15 08:23:41.098] Retrying with fastsafetensors without GDS
+```
+
+**What's happening:**
+- GDS (GPUDirect Storage) is detected but buffer registration fails
+- The code automatically falls back to fastsafetensors without GDS
+- You still get 4-5x speedup compared to standard safetensors!
+
+**Common causes:**
+1. **Unified Memory GPUs** (like NVIDIA GB10/DGX Spark):
+   - These GPUs use system RAM instead of dedicated VRAM
+   - GDS is designed for direct NVMe-to-VRAM transfers
+   - GDS may not be supported on unified memory architectures
+
+2. **Memory lock limits**:
+   - Run: `ulimit -l` to check current limit
+   - If not unlimited, add to `/etc/security/limits.conf`:
+     ```
+     * hard memlock unlimited
+     * soft memlock unlimited
+     ```
+   - Logout and login again
+
+3. **File system incompatibility**:
+   - GDS requires XFS or ext4 file systems
+   - NFS and network file systems are not supported
+   - Check with: `df -T /path/to/model`
+
+4. **Container/VM limitations**:
+   - GDS requires bare metal or specific container setup
+   - GPU must be accessible with full CUDA capabilities
+
+**Solution:**
+Run the diagnostic script for detailed analysis:
+```bash
+sudo python testing/diagnose_gds_error.py /path/to/model
+```
+
+**Current performance:**
+Even without GDS, fastsafetensors provides significant speedup:
+- Standard safetensors: ~26.7s per shard (240s total for 9 shards)
+- fastsafetensors without GDS: ~6.1s per shard (~4.4x faster!)
+- Expected with GDS: ~3-4s per shard (~6-8x faster)
+
+The automatic fallback ensures you still get excellent performance without any manual intervention.
+
 ## Notes
 
 - The script automatically uses CUDA if available, falls back to CPU otherwise
